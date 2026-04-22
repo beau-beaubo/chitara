@@ -1,64 +1,174 @@
-# Chitara AI Music Platform - Domain Layer (Exercise 3)
+# Chitara (Django backend) — Exercises 3 & 4
 
-## Project Overview
-Chitara is an AI-powered music generation platform. This repository contains the implementation of the **Domain Layer** using Django, focusing on core entities: Users and Songs.
+Chitara is an AI-powered music generation platform. This repo contains the Django backend/domain layer for **Users** and **Songs**, plus Exercise 4’s Strategy-based song generation (Mock vs Suno).
 
-## Domain Architecture
-- **Users**: Implements provider-agnostic authentication via `ExternalID`.
-- **Songs**: Stores AI-generated tracks with metadata including `prompt_text`, `voice_type`, and `status`.
-- **Relationships**: Utilizes Many-to-Many relationships for Genre, Mood, and Occasion to support flexible AI parameters.
+## What’s implemented
+- Users: custom `User` model with `external_id`
+- Songs: `Song` model + tags (`GenreTag`, `MoodTag`, `OccasionTag`)
+- Simple JSON API (no frontend/UI required for these exercises)
+- Song generation strategies:
+  - `mock` (offline, deterministic)
+  - `suno` (calls SunoApi.org using Bearer token)
 
-## Setup Instructions
-1. **Clone the repository**:
-   `git clone git@github.com:beau-beaubo/chitara.git`
-2. **Create and activate a virtual environment (recommended)**:
-   - macOS/Linux:
-     - `python3 -m venv .venv`
-     - `source .venv/bin/activate`
-3. **Install dependencies**:
-   - `pip install -r backend/requirements.txt`
-4. **Apply migrations**:
-   - `cd backend`
-   - `python3 manage.py makemigrations`
-   - `python3 manage.py migrate`
-5. **Create an admin user**:
-   - `python3 manage.py createsuperuser`
-6. **Run the server**:
-   - `python3 manage.py runserver`
+## Quickstart
 
-## CRUD Demonstration (Task 4)
-CRUD is demonstrated via a **simple JSON API** (primary) and Django Admin (secondary).
+```bash
+git clone git@github.com:beau-beaubo/chitara.git
+cd chitara
 
-### Option A — Simple API (recommended)
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install -r backend/requirements.txt
+
+cd backend
+python3 manage.py migrate
+python3 manage.py createsuperuser
+python3 manage.py runserver
+```
+
 Base URL: `http://127.0.0.1:8000`
 
-Start the server:
-`cd backend && python3 manage.py runserver`
+## Placeholders used below
 
-1) Create (POST)
-- Create a song (replace `CREATOR_ID` with an existing user id; must be a positive integer like `1`):
-   `curl -X POST http://127.0.0.1:8000/api/songs/ -H 'Content-Type: application/json' -d '{"title":"My First Song","creator_id":CREATOR_ID,"prompt_text":"lofi chill beat","voice_type":"female"}'`
+- `CREATOR_ID`: numeric user id (the `Song.creator`)
+- `SONG_ID`: numeric song id
 
-Find a valid `CREATOR_ID`:
-- Admin: open `http://127.0.0.1:8000/admin/users/user/`
+If you see a 404 like **“No Song matches the given query.”**, it means that `SONG_ID` does not exist in your database.
+
+## Exercise 3 — Songs CRUD (JSON API)
+
+### Find a valid `CREATOR_ID`
+
+- Admin: `http://127.0.0.1:8000/admin/users/user/`
 - Or shell:
-   `cd backend && python3 manage.py shell -c "from django.contrib.auth import get_user_model; print(list(get_user_model().objects.values_list('id','username')))"`
 
-2) Read (GET)
-- List songs:
-   `curl http://127.0.0.1:8000/api/songs/`
-- Get one song (replace `SONG_ID`):
-   `curl http://127.0.0.1:8000/api/songs/SONG_ID/`
+```bash
+cd backend
+python3 manage.py shell -c "from django.contrib.auth import get_user_model; print(list(get_user_model().objects.values_list('id','username')))"
+```
 
-3) Update (PATCH)
-- Update status/file path:
-   `curl -X PATCH http://127.0.0.1:8000/api/songs/SONG_ID/ -H 'Content-Type: application/json' -d '{"status":"Completed","file_path":"/tmp/song.mp3","duration":120}'`
+### Create (POST)
 
-4) Delete (DELETE)
-- Delete a song:
-   `curl -X DELETE http://127.0.0.1:8000/api/songs/SONG_ID/`
+```bash
+curl -X POST http://127.0.0.1:8000/api/songs/ \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"My First Song","creator_id":CREATOR_ID,"prompt_text":"lofi chill beat","voice_type":"female"}'
+```
 
-### Option B — Django Admin
-1. Open Admin: `http://127.0.0.1:8000/admin/`
-2. Log in with your superuser
-3. Create/Read/Update/Delete `Song` and the tag entities (`GenreTag`, `MoodTag`, `OccasionTag`)
+### Read (GET)
+
+```bash
+curl http://127.0.0.1:8000/api/songs/
+curl http://127.0.0.1:8000/api/songs/SONG_ID/
+```
+
+### Update (PATCH)
+
+```bash
+curl -X PATCH http://127.0.0.1:8000/api/songs/SONG_ID/ \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"Completed","file_path":"/tmp/song.mp3","duration":120}'
+```
+
+### Delete (DELETE)
+
+```bash
+curl -X DELETE http://127.0.0.1:8000/api/songs/SONG_ID/
+```
+
+## Exercise 4 — Strategy Pattern (Mock vs Suno API)
+
+### Strategy selection
+
+Select the active strategy using an environment variable:
+
+- `GENERATOR_STRATEGY=mock` (default)
+- `GENERATOR_STRATEGY=suno`
+
+### Generation endpoints
+
+- `POST /api/songs/<SONG_ID>/generate/` — start generation
+- `GET  /api/songs/<SONG_ID>/generate/` — poll/refresh status
+
+### Mock mode (recommended for development)
+
+```bash
+export GENERATOR_STRATEGY=mock
+cd backend && python3 manage.py runserver
+```
+
+Start generation:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/songs/SONG_ID/generate/
+```
+
+Expected result (example):
+
+- `generation.status` is `SUCCESS`
+- `song.file_path` is a predictable mock URL
+
+#### Quick demo (copy/paste): get a real `SONG_ID`, then generate
+
+```bash
+# 1) List existing songs (grab any "id")
+curl http://127.0.0.1:8000/api/songs/
+
+# 2) If the list is empty, create a song.
+#    First, find a valid CREATOR_ID (needs at least one user/superuser)
+cd backend && python3 manage.py shell -c "from django.contrib.auth import get_user_model; print(list(get_user_model().objects.values_list('id','username')))"
+
+#    Create the song (the response includes an "id")
+curl -X POST http://127.0.0.1:8000/api/songs/ \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Demo Song","creator_id":CREATOR_ID,"prompt_text":"lofi chill beat","voice_type":"female"}'
+
+# 3) Start generation using that returned id
+curl -X POST http://127.0.0.1:8000/api/songs/REAL_ID/generate/
+```
+
+### Suno mode (SunoApi.org)
+
+Suno API requests use **Bearer token auth** and the following endpoints:
+
+- `POST https://api.sunoapi.org/api/v1/generate`
+- `GET  https://api.sunoapi.org/api/v1/generate/record-info?taskId=<TASK_ID>`
+
+#### Configure the API key (do not commit it)
+
+Recommended: use a local `.env` file (kept out of git).
+
+```bash
+cp .env.example .env
+
+# edit .env and set at least:
+#   GENERATOR_STRATEGY=suno
+#   SUNO_API_KEY=YOUR_API_KEY
+
+set -a && source .env && set +a
+```
+
+Minimal flow (polling):
+
+```bash
+cd backend && python3 manage.py runserver
+
+curl -X POST http://127.0.0.1:8000/api/songs/SONG_ID/generate/
+curl http://127.0.0.1:8000/api/songs/SONG_ID/generate/
+```
+
+When status becomes `SUCCESS`, the API updates `song.file_path` to the returned `audioUrl/audio_url`.
+
+## Demonstration (unit tests)
+
+These tests demonstrate generation in both modes without requiring network access.
+
+```bash
+cd backend && python3 manage.py test songs
+```
+
+What’s covered:
+
+- Mock generation via the API endpoint (`POST /api/songs/<id>/generate/`)
+- Suno strategy request + record-info parsing (HTTP calls are mocked)
