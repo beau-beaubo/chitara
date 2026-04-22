@@ -21,6 +21,9 @@ source .venv/bin/activate
 
 pip install -r backend/requirements.txt
 
+# Optional but recommended: create a local .env for configuration (kept out of git)
+cp .env.example .env
+
 cd backend
 python3 manage.py migrate
 python3 manage.py createsuperuser
@@ -50,10 +53,39 @@ python3 manage.py shell -c "from django.contrib.auth import get_user_model; prin
 
 ### Create (POST)
 
+Required fields:
+
+- `title`
+- `creator_id`
+- `prompt_text`
+- `voice_type`
+
+Other fields you see in Django Admin (like `file_path`, `generation_task_id`, `status`, tags, etc.) are either optional, have defaults, or are populated later when you call the generation endpoint.
+
 ```bash
 curl -X POST http://127.0.0.1:8000/api/songs/ \
   -H 'Content-Type: application/json' \
   -d '{"title":"My First Song","creator_id":CREATOR_ID,"prompt_text":"lofi chill beat","voice_type":"female"}'
+```
+
+Optional fields you can include on create (examples):
+
+- `status` (defaults to `Pending`)
+- `duration` (stored on the `Song` as integer seconds)
+- `is_shared` (defaults to `false`)
+- `share_hash` (optional)
+- `genre_ids`, `mood_ids`, `occasion_ids` (arrays of existing tag ids)
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/songs/ \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Demo Song","creator_id":CREATOR_ID,"prompt_text":"lofi chill beat","voice_type":"female","status":"Pending","duration":120,"is_shared":false,"genre_ids":[1],"mood_ids":[1],"occasion_ids":[1]}'
+```
+
+To quickly see available tag ids:
+
+```bash
+cd backend && python3 manage.py shell -c "from songs.models import GenreTag, MoodTag, OccasionTag; print('genres:', list(GenreTag.objects.values_list('id','name'))); print('moods:', list(MoodTag.objects.values_list('id','name'))); print('occasions:', list(OccasionTag.objects.values_list('id','name')))"
 ```
 
 ### Read (GET)
@@ -81,10 +113,14 @@ curl -X DELETE http://127.0.0.1:8000/api/songs/SONG_ID/
 
 ### Strategy selection
 
-Select the active strategy using an environment variable:
+Select the active strategy using an environment variable.
+
+Recommended: set it in `.env` (auto-loaded when you run `manage.py`).
 
 - `GENERATOR_STRATEGY=mock` (default)
 - `GENERATOR_STRATEGY=suno`
+
+Important: `GENERATOR_STRATEGY` is read when Django starts (from settings). If you change it, restart `python3 manage.py runserver`.
 
 ### Generation endpoints
 
@@ -93,8 +129,15 @@ Select the active strategy using an environment variable:
 
 ### Mock mode (recommended for development)
 
+Set in `.env`:
+
+```env
+GENERATOR_STRATEGY=mock
+```
+
+Then start the server:
+
 ```bash
-export GENERATOR_STRATEGY=mock
 cd backend && python3 manage.py runserver
 ```
 
@@ -137,16 +180,23 @@ Suno API requests use **Bearer token auth** and the following endpoints:
 
 #### Configure the API key (do not commit it)
 
-Recommended: use a local `.env` file (kept out of git).
+Recommended: use a local `.env` file (kept out of git). Django loads `.env` automatically when you run `manage.py`.
 
 ```bash
-cp .env.example .env
-
 # edit .env and set at least:
 #   GENERATOR_STRATEGY=suno
 #   SUNO_API_KEY=YOUR_API_KEY
+#
+# Some SunoApi.org deployments also require a callback URL. If you get:
+#   "Suno API error (code=400): Please enter callBackUrl."
+# then:
+#   1) Open https://webhook.site and copy your unique URL
+#   2) Set it in .env as SUNO_CALLBACK_URL=<that URL>
+#      (example format: https://webhook.site/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
 
-set -a && source .env && set +a
+# example:
+# GENERATOR_STRATEGY=suno
+# SUNO_API_KEY=YOUR_API_KEY
 ```
 
 Minimal flow (polling):
