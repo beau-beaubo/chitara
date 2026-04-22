@@ -2,12 +2,14 @@ import json
 from typing import Any
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ImproperlyConfigured
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from .models import GenreTag, MoodTag, OccasionTag, Song
+from .services.song_generation import refresh_song_generation, start_song_generation
 
 
 def _json_body(request: HttpRequest) -> dict[str, Any]:
@@ -29,6 +31,7 @@ def _song_to_dict(song: Song) -> dict[str, Any]:
         "creator_id": song.creator_id,
         "creation_date": song.creation_date.isoformat() if song.creation_date else None,
         "file_path": song.file_path,
+        "generation_task_id": song.generation_task_id,
         "status": song.status,
         "prompt_text": song.prompt_text,
         "voice_type": song.voice_type,
@@ -38,6 +41,17 @@ def _song_to_dict(song: Song) -> dict[str, Any]:
         "genre_ids": list(song.genres.values_list("id", flat=True)),
         "mood_ids": list(song.moods.values_list("id", flat=True)),
         "occasion_ids": list(song.occasions.values_list("id", flat=True)),
+    }
+
+
+def _generation_to_dict(result: Any) -> dict[str, Any]:
+    return {
+        "task_id": getattr(result, "task_id", None),
+        "status": getattr(result, "status", None),
+        "audio_url": getattr(result, "audio_url", None),
+        "stream_audio_url": getattr(result, "stream_audio_url", None),
+        "duration_seconds": getattr(result, "duration_seconds", None),
+        "title": getattr(result, "title", None),
     }
 
 
@@ -157,3 +171,36 @@ def songs_detail(request: HttpRequest, song_id: int) -> JsonResponse:
         song.occasions.set(OccasionTag.objects.filter(id__in=payload["occasion_ids"]))
 
     return JsonResponse(_song_to_dict(song))
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def songs_generate(request: HttpRequest, song_id: int) -> JsonResponse:
+    """Start generation (POST) or poll status (GET) for a Song.
+
+    Strategy is selected centrally via settings/env var (GENERATOR_STRATEGY=mock|suno).
+    """
+
+    song = get_object_or_404(Song, pk=song_id)
+
+    try:
+        if request.method == "POST":
+            result = start_song_generation(song)
+            status_code = 200 if result.status == "SUCCESS" else 202
+        else:
+            result = refresh_song_generation(song)
+            status_code = 200
+    except ImproperlyConfigured as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+    except ValueError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except Exception as exc:
+        return JsonResponse(
+            {"error": "Generation failed", "details": str(exc)},
+            status=502,
+        )
+
+    return JsonResponse(
+        {"song": _song_to_dict(song), "generation": _generation_to_dict(result)},
+        status=status_code,
+    )

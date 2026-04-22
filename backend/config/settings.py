@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -123,3 +124,25 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'users.User'
+
+
+def _env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Exercise 4 – Strategy Pattern (Song Generation)
+# Select the active generator strategy: mock | suno
+GENERATOR_STRATEGY = os.getenv("GENERATOR_STRATEGY", "mock").strip().lower()
+
+# Suno API settings (only required when GENERATOR_STRATEGY=suno)
+SUNO_API_KEY = os.getenv("SUNO_API_KEY", "")
+SUNO_API_BASE_URL = os.getenv("SUNO_API_BASE_URL", "https://api.sunoapi.org/api/v1")
+SUNO_MODEL = os.getenv("SUNO_MODEL", "V4_5ALL")
+SUNO_CUSTOM_MODE = _env_bool("SUNO_CUSTOM_MODE", "false")
+SUNO_INSTRUMENTAL = _env_bool("SUNO_INSTRUMENTAL", "false")
+SUNO_CALLBACK_URL = os.getenv("SUNO_CALLBACK_URL", "")
+
+try:
+    SUNO_HTTP_TIMEOUT_SECONDS = float(os.getenv("SUNO_HTTP_TIMEOUT_SECONDS", "30"))
+except ValueError:
+    SUNO_HTTP_TIMEOUT_SECONDS = 30.0
