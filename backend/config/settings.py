@@ -24,9 +24,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-f70o=p$ps2ir)!@bxj5e0()0za*+f@%5*y&ruo(5e=zr08_=ej'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "true").strip().lower() in {"1", "true", "yes", "on"}
 
-ALLOWED_HOSTS = []
+_allowed_hosts_env = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost,backend")
+ALLOWED_HOSTS = [host.strip() for host in _allowed_hosts_env.split(",") if host.strip()]
 
 
 # Application definition
@@ -38,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'social_django',
     'users',
     'songs',
 ]
@@ -48,8 +50,11 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'users.middleware.JwtAuthenticationMiddleware',
+    'users.middleware.SevenDaySessionExpiryMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'social_django.middleware.SocialAuthExceptionMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -64,6 +69,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'social_django.context_processors.backends',
+                'social_django.context_processors.login_redirect',
             ],
         },
     },
@@ -78,7 +85,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': os.getenv("SQLITE_PATH", str(BASE_DIR / 'db.sqlite3')),
     }
 }
 
@@ -114,6 +121,13 @@ USE_I18N = True
 USE_TZ = True
 
 
+# Session persistence policy (SRS: auto-logout 7 days after authentication)
+# 7 days = 168 hours
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 7
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+SESSION_SAVE_EVERY_REQUEST = False
+
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
@@ -125,6 +139,53 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'users.User'
 
+
+# Frontend origin used for auth redirects and share links.
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:8000").rstrip("/")
+
+
+# Google OAuth (FR-01/FR-02) via social-auth-app-django
+AUTHENTICATION_BACKENDS = (
+    'users.oauth2.GoogleOAuth2Custom',
+    "django.contrib.auth.backends.ModelBackend",
+)
+
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = os.getenv("SOCIAL_AUTH_GOOGLE_OAUTH2_KEY", "")
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.getenv("SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET", "")
+
+# Keep scope minimal (openid + email) to match the SRS privacy intent.
+SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = ["openid", "email"]
+
+# Use email as the username to avoid storing extra profile data.
+SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL = True
+
+# Redirect back to the Next.js app after login/logout.
+# REMOVE THIS — it's combining frontend URL with backend path incorrectly
+# LOGIN_REDIRECT_URL = f"{FRONTEND_ORIGIN}/api/auth/google/jwt-redirect/"
+
+# KEEP — this is what social_django uses after OAuth callback
+
+# KEEP
+LOGOUT_REDIRECT_URL = os.getenv("LOGOUT_REDIRECT_URL", f"{FRONTEND_ORIGIN}/")
+
+# KEEP
+SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/api/user/auth/google/jwt-redirect/'
+SOCIAL_AUTH_NEW_USER_REDIRECT_URL = '/api/user/auth/google/jwt-redirect/'
+SOCIAL_AUTH_GOOGLE_OAUTH2_REDIRECT_URI = 'http://localhost:8000/api/auth/google/callback/'
+
+SOCIAL_AUTH_PIPELINE = (
+    'social_core.pipeline.social_auth.social_details',
+    'social_core.pipeline.social_auth.social_uid',
+    'social_core.pipeline.social_auth.auth_allowed',
+    'social_core.pipeline.social_auth.social_user',
+    'social_core.pipeline.user.get_username',
+    'social_core.pipeline.social_auth.associate_by_email', # Link existing accounts
+    'social_core.pipeline.user.create_user',              # <--- Ensure this is here
+    'users.pipeline.save_external_id',
+    'social_core.pipeline.social_auth.associate_user',
+    'social_core.pipeline.social_auth.load_extra_data',
+    'social_core.pipeline.user.user_details',
+)
 
 def _env_bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}

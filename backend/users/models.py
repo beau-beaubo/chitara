@@ -10,10 +10,10 @@ class User(AbstractUser):
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
 
+    # In models.py
     def save(self, *args, **kwargs):
-        # Logic: Authentication is external, so we don't use local passwords
-        if not self.password:
-            self.set_unusable_password()
+        # Standard save is sufficient; AbstractUser already handles unusable passwords 
+        # if no password is provided during create_user.
         super().save(*args, **kwargs)
 
     def __str__(self):

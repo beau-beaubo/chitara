@@ -37,6 +37,7 @@ class SongGenerationMockApiTests(TestCase):
 			voice_type="female",
 			status=SongStatus.PENDING,
 		)
+		self.client.force_login(self.user)
 
 	@override_settings(GENERATOR_STRATEGY="mock")
 	def test_generate_mock_updates_song(self):
@@ -46,7 +47,7 @@ class SongGenerationMockApiTests(TestCase):
 		body = resp.json()
 		self.assertEqual(body["generation"]["status"], "SUCCESS")
 		self.assertTrue(body["song"]["generation_task_id"].startswith("mock_"))
-		self.assertTrue(body["song"]["file_path"].startswith("mock://audio/mock_"))
+		self.assertTrue(body["song"]["file_path"].startswith("/api/mock-audio/mock_"))
 		self.assertEqual(body["song"]["status"], SongStatus.COMPLETED)
 
 		self.song.refresh_from_db()
@@ -65,6 +66,59 @@ class SongGenerationMockApiTests(TestCase):
 		resp = self.client.get(f"/api/songs/{song.id}/generate/")
 		self.assertEqual(resp.status_code, 400)
 
+	@override_settings(GENERATOR_STRATEGY="mock")
+	def test_songs_list_is_owner_scoped(self):
+		User = get_user_model()
+		other = User.objects.create(
+			username="other",
+			email="other@example.com",
+			first_name="Other",
+			last_name="User",
+		)
+		Song.objects.create(
+			title="Other Song",
+			creator=other,
+			prompt_text="other prompt",
+			voice_type="male",
+		)
+
+		resp = self.client.get("/api/songs/")
+		self.assertEqual(resp.status_code, 200)
+		results = resp.json()["results"]
+		self.assertEqual(len(results), 1)
+		self.assertEqual(results[0]["creator_id"], self.user.id)
+
+	def test_tags_list_endpoint(self):
+		resp = self.client.get("/api/tags/")
+		self.assertEqual(resp.status_code, 200)
+		body = resp.json()
+		self.assertIn("genres", body)
+		self.assertIn("moods", body)
+		self.assertIn("occasions", body)
+
+	@override_settings(GENERATOR_STRATEGY="mock")
+	def test_share_and_download_endpoints(self):
+		# Generate first so file_path exists for download.
+		self.client.post(f"/api/songs/{self.song.id}/generate/")
+
+		share_resp = self.client.post(f"/api/songs/{self.song.id}/share/")
+		self.assertEqual(share_resp.status_code, 200)
+		share_body = share_resp.json()
+		self.assertTrue(share_body["song"]["is_shared"])
+		self.assertTrue(isinstance(share_body["share_url"], str))
+
+		share_hash = share_body["song"]["share_hash"]
+		shared_detail = self.client.get(f"/api/shared/{share_hash}/")
+		self.assertEqual(shared_detail.status_code, 200)
+
+		download_resp = self.client.get(f"/api/songs/{self.song.id}/download/")
+		self.assertEqual(download_resp.status_code, 200)
+		self.assertEqual(download_resp["Content-Type"], "audio/wav")
+
+		unshare_resp = self.client.delete(f"/api/songs/{self.song.id}/share/")
+		self.assertEqual(unshare_resp.status_code, 200)
+		self.assertFalse(unshare_resp.json()["song"]["is_shared"])
+
 	@override_settings(GENERATOR_STRATEGY="suno", SUNO_API_KEY="")
 	def test_suno_missing_api_key_returns_500(self):
 		resp = self.client.post(f"/api/songs/{self.song.id}/generate/")
@@ -73,8 +127,8 @@ class SongGenerationMockApiTests(TestCase):
 
 
 class SunoStrategyUnitTests(TestCase):
-	@patch("songs.generation.suno.requests.get")
-	@patch("songs.generation.suno.requests.post")
+	@patch("songs.generation.suno_api_client.requests.get")
+	@patch("songs.generation.suno_api_client.requests.post")
 	def test_suno_generate_and_get_details(self, post_mock, get_mock):
 		post_mock.return_value = _DummyResponse(
 			{"code": 200, "msg": "success", "data": {"taskId": "task_123"}}

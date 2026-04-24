@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chitara — AI Music Studio</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♪</text></svg>">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ══════════════ SIDEBAR ══════════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <div class="brand-name">Chitara</div>
+      <div class="brand-sub">AI Music Studio</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-nav="library" onclick="navigate('library')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>
+        Library
+      </button>
+      <button class="nav-item" data-nav="create" onclick="navigate('create')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg>
+        Create
+      </button>
+    </nav>
+
+    <div class="sidebar-bottom">
+      Backend at <code>localhost:8000</code><br>
+      API at <code>/api</code>
+    </div>
+  </aside>
+
+  <!-- ══════════════ MAIN ══════════════ -->
+  <div class="main-area">
+
+    <!-- Page header -->
+    <header class="page-header">
+      <div class="header-left">
+        <h1 class="page-title">Your Library</h1>
+        <span class="song-count" id="songCount">0 songs</span>
+      </div>
+      <div class="header-right">
+        <button class="btn-primary" id="authBtn" onclick="handleAuthClick()">Sign in</button>
+        <button class="btn-ghost" onclick="doRefresh()">Refresh</button>
+      </div>
+    </header>
+
+    <!-- Songs area — renderSongs() populates this -->
+    <div id="songsArea">
+      <div class="empty-state">
+        <p class="empty-auth">Sign in to access your library.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════ AUDIO PLAYER BAR ══════════════ -->
+<div class="audio-bar" id="audioBar">
+  <div class="player-info">
+    <div class="player-title" id="playerTitle">—</div>
+    <div class="player-sub"   id="playerSub">AI</div>
+  </div>
+  <button class="play-btn" id="playBtn" onclick="togglePlay()">▶</button>
+  <div class="progress-wrap">
+    <div class="progress-bar" onclick="seekProgress(event)">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <span class="time-label" id="timeLabel">0:00 / 0:00</span>
+  </div>
+  <button class="close-player" onclick="closePlayer()">✕</button>
+</div>
+
+<!-- ══════════════ CREATE SONG MODAL ══════════════ -->
+<div class="modal-backdrop" id="createModal" onclick="closeCreateModal(event)">
+  <div class="create-modal">
+    <div class="modal-head">
+      <h2>New Song</h2>
+      <button class="modal-close" onclick="closeCreateModal()">✕</button>
+    </div>
+
+    <div class="create-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="fieldTitle">Title *</label>
+          <input type="text" id="fieldTitle" placeholder="Midnight Lofi" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="fieldVoice">Voice type</label>
+          <select id="fieldVoice">
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+            <option value="duet">Duet</option>
+            <option value="none">Instrumental</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="fieldPrompt">Prompt *</label>
+        <textarea id="fieldPrompt" rows="4"
+          placeholder="lofi chill beat, rainy night, warm vinyl, melancholic…"></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Genres</label>
+          <div class="tag-box" id="genrePicker"></div>
+        </div>
+        <div class="form-group">
+          <label>Moods</label>
+          <div class="tag-box" id="moodPicker"></div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Occasions</label>
+        <div class="tag-box" id="occasionPicker"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-ghost" onclick="closeCreateModal()">Cancel</button>
+        <button class="btn-primary" id="btnCreate" onclick="submitSongForm()">Create song</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ AUTH MODAL ══════════════ -->
+<div class="modal-backdrop" id="authModal" onclick="closeAuthModal(event)">
+  <div class="auth-modal">
+    <div class="auth-modal-head">
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login"    onclick="switchAuthTab('login')">Sign In</button>
+        <button class="auth-tab"        data-tab="register" onclick="switchAuthTab('register')">Register</button>
+      </div>
+      <button class="modal-close" onclick="closeAuthModal()">✕</button>
+    </div>
+
+    <!-- Sign-in form -->
+    <div id="loginForm">
+      <div class="form-group">
+        <label for="loginUsername">Username</label>
+        <input type="text" id="loginUsername" placeholder="Your username" autocomplete="username">
+      </div>
+      <div class="form-group" style="margin-top:0.65rem">
+        <label for="loginPassword">Password</label>
+        <input type="password" id="loginPassword" placeholder="Your password" autocomplete="current-password">
+      </div>
+      <p class="form-error" id="loginError"></p>
+      <button id="btnLogin" class="btn-primary btn-full" onclick="doLogin()">Sign In</button>
+      <div class="modal-divider">or</div>
+      <a href="/api/auth/google/login/" class="btn-google">
+        <svg width="16" height="16" viewBox="0 0 24 24">
+          <path fill="#EA4335" d="M5.266 9.765A7.077 7.077 0 0 1 12 4.909c1.69 0 3.218.6 4.418 1.582L19.91 3C17.782 1.145 15.055 0 12 0 7.27 0 3.198 2.698 1.24 6.65l4.026 3.115Z"/>
+          <path fill="#34A853" d="M16.04 18.013C14.951 18.716 13.566 19.09 12 19.09c-3.133 0-5.78-2.013-6.723-4.822l-4.04 3.066C3.193 21.294 7.265 24 12 24c2.933 0 5.735-1.043 7.834-3l-3.794-2.987Z"/>
+          <path fill="#4A90D9" d="M19.834 21c2.195-2.048 3.62-5.096 3.62-9 0-.71-.09-1.473-.254-2.182H12v4.637h6.436c-.317 1.559-1.17 2.766-2.395 3.558L19.834 21Z"/>
+          <path fill="#FBBC05" d="M5.277 14.268A7.12 7.12 0 0 1 4.909 12c0-.782.125-1.533.357-2.235L1.24 6.65A11.934 11.934 0 0 0 0 12c0 1.92.445 3.73 1.237 5.335l4.04-3.067Z"/>
+        </svg>
+        Continue with Google
+      </a>
+    </div>
+
+    <!-- Register form -->
+    <div id="registerForm" style="display:none">
+      <div class="form-row" style="margin-bottom:0.65rem">
+        <div class="form-group">
+          <label for="regFirstName">First Name</label>
+          <input type="text" id="regFirstName" placeholder="First name" autocomplete="given-name">
+        </div>
+        <div class="form-group">
+          <label for="regLastName">Last Name</label>
+          <input type="text" id="regLastName" placeholder="Last name" autocomplete="family-name">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0.65rem">
+        <label for="regUsername">Username</label>
+        <input type="text" id="regUsername" placeholder="Choose a username" autocomplete="username">
+      </div>
+      <div class="form-group" style="margin-bottom:0.65rem">
+        <label for="regEmail">Email</label>
+        <input type="email" id="regEmail" placeholder="your@email.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="regPassword">Password</label>
+        <input type="password" id="regPassword" placeholder="Choose a password" autocomplete="new-password">
+      </div>
+      <p class="form-error" id="registerError"></p>
+      <button id="btnRegister" class="btn-primary btn-full" onclick="doRegister()">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ DETAIL MODAL ══════════════ -->
+<div class="modal-backdrop" id="detailModal" onclick="closeDetailModal(event)">
+  <div class="detail-modal">
+    <div class="modal-head">
+      <h2 id="detailTitle">Song Detail</h2>
+      <button class="modal-close" onclick="closeDetailModal()">✕</button>
+    </div>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

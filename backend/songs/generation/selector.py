@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import SongGeneratorStrategy
+from .circuit_breaker_song_generator_strategy import CircuitBreakerSongGeneratorStrategy
 from .mock import MockSongGeneratorStrategy
 from .suno import SunoApiError, SunoConfig, SunoSongGeneratorStrategy
 
@@ -29,7 +30,7 @@ def get_active_song_generator() -> SongGeneratorStrategy:
                 ),
                 timeout_seconds=float(getattr(settings, "SUNO_HTTP_TIMEOUT_SECONDS", 30.0)),
             )
-            return SunoSongGeneratorStrategy(config)
+            return CircuitBreakerSongGeneratorStrategy(SunoSongGeneratorStrategy(config))
         except (ValueError, SunoApiError) as exc:
             raise ImproperlyConfigured(str(exc)) from exc
 

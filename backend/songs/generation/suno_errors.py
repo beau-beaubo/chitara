@@ -1,0 +1,2 @@
+class SunoApiError(RuntimeError):
+    pass
