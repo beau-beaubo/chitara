@@ -9,6 +9,7 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
+    last_auth_date = models.DateTimeField(null=True, blank=True)
 
     # In models.py
     def save(self, *args, **kwargs):

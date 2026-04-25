@@ -48,24 +48,22 @@ const API = {
 
 // ── STATIC TAG FALLBACK ───────────────────────────────────
 const STATIC_TAGS = {
+  // Must mirror the domain model exactly
   genres: [
     { id: 1, name: 'Pop' },       { id: 2, name: 'Rock' },
-    { id: 3, name: 'Classical' }, { id: 4, name: 'Lo-fi' },
-    { id: 5, name: 'Jazz' },      { id: 6, name: 'Hip-Hop' },
-    { id: 7, name: 'R&B' },       { id: 8, name: 'Electronic' },
-    { id: 9, name: 'Acoustic' },  { id: 10, name: 'Country' },
+    { id: 3, name: 'Classical' }, { id: 4, name: 'R&B' },
+    { id: 5, name: 'Lo-fi' },     { id: 6, name: 'Jazz' },
+    { id: 7, name: 'Electronic' },
   ],
   moods: [
     { id: 1, name: 'Happy' },     { id: 2, name: 'Sad' },
     { id: 3, name: 'Energetic' }, { id: 4, name: 'Calm' },
-    { id: 5, name: 'Romantic' },  { id: 6, name: 'Dark' },
-    { id: 7, name: 'Uplifting' }, { id: 8, name: 'Melancholic' },
+    { id: 5, name: 'Aggressive' },{ id: 6, name: 'Focus' },
   ],
   occasions: [
-    { id: 1, name: 'Birthday' },  { id: 2, name: 'Workout' },
-    { id: 3, name: 'Study' },     { id: 4, name: 'Road Trip' },
-    { id: 5, name: 'Wedding' },   { id: 6, name: 'Party' },
-    { id: 7, name: 'Sleep' },     { id: 8, name: 'Meditation' },
+    { id: 1, name: 'Birthday' },  { id: 2, name: 'Graduation' },
+    { id: 3, name: 'Workout' },   { id: 4, name: 'Study' },
+    { id: 5, name: 'Party' },
   ],
 };
 
@@ -239,6 +237,10 @@ async function loadSongs() {
     const data  = await API.getSongs();
     State.songs = data.results ?? [];
     renderSongs();
+    // Auto-resume polling for any songs still stuck in Processing
+    State.songs
+      .filter(s => s.status?.toLowerCase() === 'processing' && s.generation_task_id)
+      .forEach(s => startPolling(s.id));
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -293,6 +295,7 @@ function trackRowHTML(song, index) {
     : '';
   const canPlay  = status === 'completed' && song.file_path;
   const canGen   = status === 'pending' || status === 'failed';
+  const isStuck  = status === 'processing';
   const prompt   = (song.prompt_text ?? '').slice(0, 65);
 
   return `
@@ -313,8 +316,9 @@ function trackRowHTML(song, index) {
       </span>
       <span class="col-date">${date}</span>
       <span class="col-actions" onclick="event.stopPropagation()">
-        ${canPlay ? `<button class="action-btn" title="Play"     onclick="playSong(${song.id})">▶</button>` : ''}
-        ${canGen  ? `<button class="action-btn" id="gen-btn-${song.id}" title="Generate" onclick="generateSong(${song.id})">⚡</button>` : ''}
+        ${canPlay  ? `<button class="action-btn" title="Play"     onclick="playSong(${song.id})">▶</button>` : ''}
+        ${canGen   ? `<button class="action-btn" id="gen-btn-${song.id}" title="Generate" onclick="generateSong(${song.id})">⚡</button>` : ''}
+        ${isStuck  ? `<button class="action-btn" title="Stuck? Reset to Pending" onclick="resetSong(${song.id})">↺</button>` : ''}
         <button class="action-btn" title="Share"  onclick="toggleShare(${song.id})">⇧</button>
         <button class="action-btn danger" title="Delete" onclick="deleteSong(${song.id})">✕</button>
       </span>
@@ -477,6 +481,7 @@ function renderDetail(song) {
                      completed:'badge-completed', failed:'badge-failed' }[status] ?? '';
   const canPlay  = status === 'completed' && song.file_path;
   const canGen   = status === 'pending' || status === 'failed';
+  const isStuck  = status === 'processing';
 
   const tagChips = (ids, list) => (ids ?? []).map(id => {
     const t = list?.find(x => x.id === id);
@@ -493,9 +498,10 @@ function renderDetail(song) {
     </div>
 
     <div class="detail-actions">
-      ${canPlay ? `<button class="card-btn play" onclick="playSong(${song.id})">▶ Play</button>` : ''}
-      ${canGen  ? `<button class="card-btn" onclick="generateSong(${song.id})">⚡ Generate</button>` : ''}
-      ${canPlay ? `<a href="/api/songs/${song.id}/download/" class="card-btn" download>↓ Download</a>` : ''}
+      ${canPlay  ? `<button class="card-btn play" onclick="playSong(${song.id})">▶ Play</button>` : ''}
+      ${canGen   ? `<button class="card-btn" onclick="generateSong(${song.id})">⚡ Generate</button>` : ''}
+      ${isStuck  ? `<button class="card-btn" title="Stuck? Reset back to Pending so you can Generate again" onclick="resetSong(${song.id}, true)">↺ Reset</button>` : ''}
+      ${canPlay  ? `<a href="/api/songs/${song.id}/download/" class="card-btn" download>↓ Download</a>` : ''}
       <button class="card-btn" onclick="toggleShare(${song.id})">${song.is_shared ? '✕ Unshare' : '⇧ Share'}</button>
       <button class="card-btn danger" onclick="deleteSong(${song.id}, true)">✕ Delete</button>
     </div>
@@ -569,6 +575,27 @@ async function deleteSong(id, closeModal = false) {
     if (closeModal) document.getElementById('detailModal').classList.remove('open');
     renderSongs();
     toast('Song deleted', 'info');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── RESET STUCK SONG ─────────────────────────────────────
+async function resetSong(id, closeModal = false) {
+  try {
+    const song = await API.request('PATCH', `/api/songs/${id}/`, {
+      status: 'Pending',
+      generation_task_id: null,
+    });
+    // Stop any active polling for this song
+    if (State.pollingTimers[id]) {
+      clearInterval(State.pollingTimers[id]);
+      delete State.pollingTimers[id];
+    }
+    updateSongInState(song);
+    if (closeModal) {
+      document.getElementById('detailModal').classList.remove('open');
+    }
+    renderSongs();
+    toast('Song reset to Pending — click ⚡ Generate to try again', 'info');
   } catch (e) { toast(e.message, 'error'); }
 }
 

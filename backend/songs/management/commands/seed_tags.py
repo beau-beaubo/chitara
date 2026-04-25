@@ -7,9 +7,12 @@ class Command(BaseCommand):
     help = "Seed default Genre/Mood/Occasion tags"
 
     def handle(self, *args, **options):
-        genres = ["Pop", "Rock", "Classical", "Lo-fi", "Jazz", "Hip-Hop"]
-        moods = ["Happy", "Sad", "Energetic", "Calm", "Romantic"]
-        occasions = ["Birthday", "Workout", "Study", "Road Trip", "Wedding"]
+        # Domain model: Pop, Rock, Classical, R&B, Lo-fi, Jazz, Electronic
+        genres = ["Pop", "Rock", "Classical", "R&B", "Lo-fi", "Jazz", "Electronic"]
+        # Domain model: Happy, Sad, Energetic, Calm, Aggressive, Focus
+        moods = ["Happy", "Sad", "Energetic", "Calm", "Aggressive", "Focus"]
+        # Domain model: Birthday, Graduation, Workout, Study, Party
+        occasions = ["Birthday", "Graduation", "Workout", "Study", "Party"]
 
         for name in genres:
             GenreTag.objects.get_or_create(name=name)

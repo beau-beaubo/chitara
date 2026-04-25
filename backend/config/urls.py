@@ -5,8 +5,8 @@ from django.http import FileResponse
 from django.urls import include, path
 from django.views.static import serve
 
-from social_django.views import complete as social_complete
-from users.views import google_jwt_redirect, google_login
+from social_django.views import auth as social_auth, complete as social_complete
+from users.views import google_jwt_redirect
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR.parent / 'frontend'
@@ -27,7 +27,7 @@ def frontend_js(request, path):
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('social_django.urls', namespace='social')),
-    path('api/auth/google/login/', google_login, name='google_login'),
+    path('api/auth/google/login/', social_auth, {'backend': 'google-oauth2'}, name='google_login'),
     path('api/auth/google/callback/', social_complete, {"backend": "google-oauth2"}, name='google_callback'),
     path('api/auth/google/jwt-redirect/', google_jwt_redirect, name='google_jwt_redirect'),
     path('api/', include('songs.urls')),

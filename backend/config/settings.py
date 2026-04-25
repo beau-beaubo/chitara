@@ -156,6 +156,9 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.getenv("SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET",
 # Keep scope minimal (openid + email) to match the SRS privacy intent.
 SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = ["openid", "email"]
 
+# Force Google to show account chooser every time (replaces the custom google_login view).
+SOCIAL_AUTH_GOOGLE_OAUTH2_AUTH_EXTRA_ARGUMENTS = {"prompt": "select_account"}
+
 # Use email as the username to avoid storing extra profile data.
 SOCIAL_AUTH_USERNAME_IS_FULL_EMAIL = True
 

@@ -1,232 +1,175 @@
-# Chitara (Django backend) — Exercises 3 & 4
-
+# Chitara
 Chitara is an AI-powered music generation platform. This repo contains the Django backend/domain layer for **Users** and **Songs**, plus Exercise 4’s Strategy-based song generation (Mock vs Suno).
 
-## What’s implemented
-- Users: custom `User` model with `external_id`
-- Google OAuth login (`/auth/login/google-oauth2/`)
-- Songs: `Song` model + tags (`GenreTag`, `MoodTag`, `OccasionTag`)
-- Simple JSON API
-- Optional Next.js + Tailwind frontend in `frontend/`
-- Song generation strategies:
-  - `mock` (offline, deterministic)
-  - `suno` (calls SunoApi.org using Bearer token)
-- Share links (`/api/songs/<id>/share/`, `/api/shared/<share_hash>/`)
-- Creator-only downloads (`/api/songs/<id>/download/`)
+## Exercise implemented detail
+- docs/Exercise3.md
+- docs/Exercise4.md
+- diagram/classdiagram.png
+- diagram/domainmodel.png
+- diagram/sequencediagram.png
 
-## SRS alignment (FURPS – Functionality)
+## Prerequisites
 
-See `SRS_REQUIREMENTS_COVERAGE.md` for an FR/NFR traceability table and the calculation supporting the “80%++” claim (for the MVP scope implemented in this repo).
+- Python 3.11+
+- A Google account (for OAuth)
+- A Suno API account (for real AI generation — optional, mock works offline)
 
-## Quickstart
+---
 
-```bash
-git clone git@github.com:beau-beaubo/chitara.git
-cd chitara
-
-python3 -m venv .venv
-source .venv/bin/activate
-
-pip install -r backend/requirements.txt
-
-# Optional but recommended: create a local .env for configuration (kept out of git)
-cp .env.example .env
-
-cd backend
-python3 manage.py migrate
-python3 manage.py seed_tags
-python3 manage.py createsuperuser
-python3 manage.py runserver
-```
-
-Base URL: `http://127.0.0.1:8000`
-- Frontend: `http://localhost:8000/`
-- Backend API: `http://localhost:8000/api`
-
-
-Notes:
-
-- Backend runs with `gunicorn` and auto-runs `migrate` + `seed_tags` on startup.
-- SQLite is persisted in a named Docker volume (`backend_data`).
-- For Google OAuth in containers, set OAuth redirect URI to:
-  - `http://localhost:8000/auth/complete/google-oauth2/`
-
-
-## Placeholders used below
-
-- `SONG_ID`: numeric song id
-
-If you see a 404 like **“No Song matches the given query.”**, it means that `SONG_ID` does not exist in your database.
-
-## Exercise 3 — Songs CRUD (JSON API)
-
-All songs endpoints are authenticated and creator-scoped.
-Use the frontend login button (Google OAuth) or an authenticated Django session.
-
-### Create (POST)
-
-Required fields:
-
-- `title`
-- `prompt_text`
-- `voice_type`
-
-Other fields you see in Django Admin (like `file_path`, `generation_task_id`, `status`, tags, etc.) are either optional, have defaults, or are populated later when you call the generation endpoint.
+## 1. Clone & Install
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/songs/ \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"My First Song","prompt_text":"lofi chill beat","voice_type":"female"}'
+git clone <repo-url>
+cd chitara/backend
+pip install -r requirements.txt
 ```
 
-Optional fields you can include on create (examples):
+---
 
-- `status` (defaults to `Pending`)
-- `duration` (stored on the `Song` as integer seconds)
-- `is_shared` (defaults to `false`)
-- `share_hash` (optional)
-- `genre_ids`, `mood_ids`, `occasion_ids` (arrays of existing tag ids)
+## 2. Environment Variables
+
+Copy the example and fill in your secrets:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/songs/ \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Demo Song","prompt_text":"lofi chill beat","voice_type":"female","status":"Pending","duration":120,"is_shared":false,"genre_ids":[1],"mood_ids":[1],"occasion_ids":[1]}'
+cp .env.example .env   # or edit .env directly
 ```
 
-To quickly see available tag ids:
+Key variables in `.env`:
 
-```bash
-cd backend && python3 manage.py shell -c "from songs.models import GenreTag, MoodTag, OccasionTag; print('genres:', list(GenreTag.objects.values_list('id','name'))); print('moods:', list(MoodTag.objects.values_list('id','name'))); print('occasions:', list(OccasionTag.objects.values_list('id','name')))"
+| Variable | Description | Example |
+|---|---|---|
+| `SECRET_KEY` | Django secret key | `django-insecure-xxx` |
+| `DEBUG` | Enable debug mode | `True` |
+| `FRONTEND_ORIGIN` | Where the frontend is served | `http://localhost:8000` |
+| `SOCIAL_AUTH_GOOGLE_OAUTH2_KEY` | Google OAuth Client ID | `427558...apps.googleusercontent.com` |
+| `SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET` | Google OAuth Client Secret | `GOCSPX-...` |
+| `GENERATOR_STRATEGY` | `mock` (offline) or `suno` (real AI) | `mock` |
+| `SUNO_API_KEY` | Your Suno API key | `abc123...` |
+
+---
+
+## 3. Google OAuth Setup
+
+### Step 1 — Create a Google Cloud Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Click **"New Project"** → give it a name (e.g. `chitara`) → **Create**
+
+### Step 2 — Enable Google+ / Identity API
+
+1. In the sidebar: **APIs & Services → Library**
+2. Search for **"Google Identity"** or **"Google+ API"** → **Enable**
+
+### Step 3 — Create OAuth Credentials
+
+1. **APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID**
+2. Application type: **Web application**
+3. Name: `Chitara Dev`
+4. Under **Authorised redirect URIs** add:
+   ```
+   http://localhost:8000/api/auth/google/callback/
+   ```
+5. Click **Create**
+6. Copy the **Client ID** and **Client Secret**
+
+### Step 4 — Configure OAuth Consent Screen
+
+1. **APIs & Services → OAuth consent screen**
+2. User type: **External** → **Create**
+3. Fill in:
+   - App name: `Chitara`
+   - User support email: your email
+   - Developer contact: your email
+4. Scopes: add `email` and `openid`
+5. Test users: add your own Google email
+6. Save
+
+### Step 5 — Add to `.env`
+
+```env
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY=<your-client-id>.apps.googleusercontent.com
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET=<your-client-secret>
+SOCIAL_AUTH_GOOGLE_OAUTH2_REDIRECT_URI=http://localhost:8000/api/auth/google/callback/
+FRONTEND_ORIGIN=http://localhost:8000
 ```
 
-### Read (GET)
+### Step 6 — Test the OAuth Flow
 
-```bash
-curl http://127.0.0.1:8000/api/songs/
-curl http://127.0.0.1:8000/api/songs/SONG_ID/
+1. Start the server: `python manage.py runserver`
+2. Open `http://localhost:8000`
+3. Click **"Continue with Google"**
+4. You should be redirected to Google → choose an account → redirected back with a JWT token
+
+---
+
+## 4. Suno API Setup (for real AI song generation)
+
+By default the app uses `GENERATOR_STRATEGY=mock` which generates a short test tone (offline, no API key needed). Switch to `suno` for real AI-generated music.
+
+### Step 1 — Get a Suno API Key
+
+1. Go to [sunoapi.org](https://sunoapi.org) and create an account
+2. Navigate to **Dashboard → API Keys → Create Key**
+3. Copy your API key
+
+### Step 2 — Add to `.env`
+
+```env
+GENERATOR_STRATEGY=suno
+SUNO_API_KEY=<your-suno-api-key>
+SUNO_API_BASE_URL=https://api.sunoapi.org/api/v1
+SUNO_MODEL=V4_5ALL
+SUNO_CUSTOM_MODE=false
+SUNO_INSTRUMENTAL=false
 ```
 
-### Update (PATCH)
+| Variable | Options | Description |
+|---|---|---|
+| `SUNO_MODEL` | `V4_5ALL`, `V4_5`, `V4`, `V3_5` | Generation model version |
+| `SUNO_CUSTOM_MODE` | `true` / `false` | Custom vs. auto mode |
+| `SUNO_INSTRUMENTAL` | `true` / `false` | Generate without vocals |
+| `SUNO_CALLBACK_URL` | any HTTPS URL | Webhook for async completion (optional) |
+| `SUNO_HTTP_TIMEOUT_SECONDS` | integer | HTTP request timeout (default `30`) |
 
-```bash
-curl -X PATCH http://127.0.0.1:8000/api/songs/SONG_ID/ \
-  -H 'Content-Type: application/json' \
-  -d '{"status":"Completed","file_path":"/tmp/song.mp3","duration":120}'
-```
+### Step 3 — How Generation Works with Suno
 
-### Delete (DELETE)
+1. Click **⚡ Generate** on a song card
+2. The backend sends your prompt to Suno → returns a `taskId` (status: `Processing`)
+3. The frontend polls `GET /api/songs/{id}/generate/` every 3 seconds
+4. When Suno finishes, status becomes `Completed` and the audio URL is saved
+5. The **▶ Play** and **↓ Download** buttons appear
 
-```bash
-curl -X DELETE http://127.0.0.1:8000/api/songs/SONG_ID/
-```
+> **Note:** Suno generation typically takes 20–60 seconds depending on model and server load.
 
-## Exercise 4 — Strategy Pattern (Mock vs Suno API)
+### Step 4 — Fallback to Mock
 
-### Strategy selection
-
-Select the active strategy using an environment variable.
-
-Recommended: set it in `.env` (auto-loaded when you run `manage.py`).
-
-- `GENERATOR_STRATEGY=mock` (default)
-- `GENERATOR_STRATEGY=suno`
-
-Important: `GENERATOR_STRATEGY` is read when Django starts (from settings). If you change it, restart `python3 manage.py runserver`.
-
-### Generation endpoints
-
-- `POST /api/songs/<SONG_ID>/generate/` — start generation
-- `GET  /api/songs/<SONG_ID>/generate/` — poll/refresh status
-
-### Mock mode (recommended for development)
-
-Set in `.env`:
+If you want to test the UI without spending Suno credits, set:
 
 ```env
 GENERATOR_STRATEGY=mock
 ```
 
-Then start the server:
+The mock generator instantly returns a 1.5-second 440Hz sine wave (`audio/wav`) so you can test the full Play → Download → Share flow offline.
+
+---
+
+## 5. Database Setup
 
 ```bash
-cd backend && python3 manage.py runserver
+cd backend
+python manage.py migrate          # apply all migrations
+python manage.py seed_tags        # seed Genre/Mood/Occasion tags
+python manage.py createsuperuser  # (optional) create an admin account
 ```
 
-Start generation:
+---
+
+## 6. Run the Development Server
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/songs/SONG_ID/generate/
+python manage.py runserver
 ```
 
-Expected result (example):
+Open **http://localhost:8000** — Django serves the frontend directly from the `frontend/` folder.
 
-- `generation.status` is `SUCCESS`
-- `song.file_path` is a predictable mock URL
-
-#### Quick demo (copy/paste): get a real `SONG_ID`, then generate
-
-```bash
-# 1) List existing songs (grab any "id")
-curl http://127.0.0.1:8000/api/songs/
-
-# 2) If the list is empty, create a song.
-#    Create the song (the response includes an "id")
-curl -X POST http://127.0.0.1:8000/api/songs/ \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Demo Song","prompt_text":"lofi chill beat","voice_type":"female"}'
-
-# 3) Start generation using that returned id
-curl -X POST http://127.0.0.1:8000/api/songs/REAL_ID/generate/
-```
-
-### Suno mode (SunoApi.org)
-
-Suno API requests use **Bearer token auth** and the following endpoints:
-
-- `POST https://api.sunoapi.org/api/v1/generate`
-- `GET  https://api.sunoapi.org/api/v1/generate/record-info?taskId=<TASK_ID>`
-
-#### Configure the API key (do not commit it)
-
-Recommended: use a local `.env` file (kept out of git). Django loads `.env` automatically when you run `manage.py`.
-
-```bash
-# edit .env and set at least:
-#   GENERATOR_STRATEGY=suno
-#   SUNO_API_KEY=YOUR_API_KEY
-#
-# Some SunoApi.org deployments also require a callback URL. If you get:
-#   "Suno API error (code=400): Please enter callBackUrl."
-# then:
-#   1) Open https://webhook.site and copy your unique URL
-#   2) Set it in .env as SUNO_CALLBACK_URL=<that URL>
-#      (example format: https://webhook.site/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-
-# example:
-# GENERATOR_STRATEGY=suno
-# SUNO_API_KEY=YOUR_API_KEY
-```
-
-Minimal flow (polling):
-
-```bash
-cd backend && python3 manage.py runserver
-
-curl -X POST http://127.0.0.1:8000/api/songs/SONG_ID/generate/
-curl http://127.0.0.1:8000/api/songs/SONG_ID/generate/
-```
-
-When status becomes `SUCCESS`, the API updates `song.file_path` to the returned `audioUrl/audio_url`.
-
-## Demonstration (unit tests)
-
-These tests demonstrate generation in both modes without requiring network access.
-
-```bash
-cd backend && python3 manage.py test songs
-```
-
-What’s covered:
-
-- Mock generation via the API endpoint (`POST /api/songs/<id>/generate/`)
-- Suno strategy request + record-info parsing (HTTP calls are mocked)
+---

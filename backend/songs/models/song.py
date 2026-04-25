@@ -18,6 +18,7 @@ class Song(models.Model):
     )
     creation_date = models.DateTimeField(auto_now_add=True)
     file_path = models.CharField(max_length=500, blank=True, null=True)
+    file_type = models.CharField(max_length=20, blank=True, null=True)
 
     # External generation tracking (e.g., Suno taskId)
     generation_task_id = models.CharField(max_length=64, blank=True, null=True)
